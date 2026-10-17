@@ -1,5 +1,6 @@
 <Project>
   <PropertyGroup>
+    <IsPackable>false</IsPackable>
     <UseArtifactsOutput>true</UseArtifactsOutput>
     <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts</ArtifactsPath>
   </PropertyGroup>
