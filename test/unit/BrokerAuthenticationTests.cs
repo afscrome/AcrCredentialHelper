@@ -111,6 +111,71 @@ public class BrokerAuthenticationTests
         await Assert.That(store.Records).IsEmpty();
     }
 
+    [Test]
+    public async Task InteractiveSignInWaitsForLockAndRetriesSilently()
+    {
+        var lockFile = new InteractiveAuthenticationLock($"acr-test-{Guid.NewGuid():N}");
+        var credential = new StubBrokerCredential(await StubBrokerCredential.ReadRecordAsync())
+        {
+            RequiresInteraction = true,
+        };
+        var session = new AuthenticationSession(credential, "tenant", new InMemoryRegistryAccountMappingStore(),
+            NullLogger.Instance, await StubBrokerCredential.ReadRecordAsync(), interactiveLock: lockFile);
+
+        Task<AccessToken> pending;
+        using (await lockFile.AcquireAsync())
+        {
+            pending = session.GetTokenAsync();
+            await Task.Delay(500);
+            await Assert.That(pending.IsCompleted).IsFalse();
+            // Simulates another process completing sign-in while this one waits.
+            credential.RequiresInteraction = false;
+        }
+
+        await pending;
+        await Assert.That(credential.InteractiveCalls).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task InteractiveLockIsExclusiveUntilReleased()
+    {
+        var lockFile = new InteractiveAuthenticationLock($"acr-test-{Guid.NewGuid():N}");
+        var first = await lockFile.AcquireAsync();
+        await Assert.That(first.Waited).IsFalse();
+        var second = lockFile.AcquireAsync();
+        await Task.Delay(500);
+        await Assert.That(second.IsCompleted).IsFalse();
+        first.Dispose();
+        using var acquired = await second.WaitAsync(TimeSpan.FromSeconds(10));
+        await Assert.That(acquired.Waited).IsTrue();
+    }
+
+    [Test]
+    public async Task CancellingInteractiveLockWaitDoesNotTakeOwnership()
+    {
+        var lockFile = new InteractiveAuthenticationLock($"acr-test-{Guid.NewGuid():N}");
+        var first = await lockFile.AcquireAsync();
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        await Assert.That(async () => await lockFile.AcquireAsync(cts.Token)).Throws<OperationCanceledException>();
+        first.Dispose();
+        using var reacquired = await lockFile.AcquireAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        await Assert.That(reacquired.Waited).IsFalse();
+    }
+
+    [Test]
+    public async Task AbandonedInteractiveLockIsAcquired()
+    {
+        var name = $"acr-test-{Guid.NewGuid():N}";
+        // A thread that exits while owning a mutex abandons it, as a crashed process would.
+        var crashed = new Thread(() => new Mutex(initiallyOwned: true, name));
+        crashed.Start();
+        crashed.Join();
+
+        using var acquired = await new InteractiveAuthenticationLock(name).AcquireAsync()
+            .WaitAsync(TimeSpan.FromSeconds(10));
+        await Assert.That(acquired.Waited).IsFalse();
+    }
+
     private static AuthenticationSession CreateSession(TokenCredential credential, IRegistryAccountMappingStore? store = null) =>
         new(credential, "tenant", store ?? new InMemoryRegistryAccountMappingStore(), NullLogger.Instance);
 

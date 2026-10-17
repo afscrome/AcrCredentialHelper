@@ -60,4 +60,7 @@ internal static partial class Logs
 
     [LoggerMessage(EventId = 39, Level = LogLevel.Information, Message = "All discovered registries are already configured in {ConfigPath}; it was not changed")]
     internal static partial void DockerConfigurationUnchanged(ILogger logger, string configPath);
+
+    [LoggerMessage(EventId = 40, Level = LogLevel.Debug, Message = "Waited for another process to finish interactive sign-in")]
+    internal static partial void WaitedForInteractiveAuthentication(ILogger logger);
 }
