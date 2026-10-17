@@ -13,7 +13,6 @@ internal sealed class StubBrokerCredential(AuthenticationRecord? record = null)
 
     internal bool RequiresInteraction { get; set; }
     internal int InteractiveCalls { get; private set; }
-    internal int TokenCalls { get; private set; }
     internal List<TokenRequestContext> Contexts { get; } = [];
 
     internal static async Task<AuthenticationRecord> ReadRecordAsync(
@@ -30,7 +29,6 @@ internal sealed class StubBrokerCredential(AuthenticationRecord? record = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Contexts.Add(requestContext);
-        TokenCalls++;
         if (RequiresInteraction)
         {
             throw new AuthenticationRequiredException("Sign in required", requestContext);

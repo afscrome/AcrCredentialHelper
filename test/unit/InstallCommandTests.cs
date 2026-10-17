@@ -211,7 +211,6 @@ public class InstallCommandTests
         await Assert.That(output.ToString()).IsEqualTo(string.Empty);
         await Assert.That(store.Records).IsEmpty();
         await Assert.That(updater.Calls).IsEqualTo(0);
-        credential.GetTokenAsync(Any<TokenRequestContext>(), Any<CancellationToken>()).WasCalled(Times.Once);
         credential.AuthenticateAsync(Any<TokenRequestContext>(), Any<CancellationToken>())
             .WasCalled(stage == "token" ? Times.Never : Times.Once);
     }

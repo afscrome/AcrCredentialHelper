@@ -1,42 +1,43 @@
-namespace AlexCrome.Acr.CredentialHelper.Auth;
+namespace AlexCrome.Acr.CredentialHelper;
 
 /// <summary>
-/// Cross-process lock that ensures only one helper process shows a sign-in prompt at a time.
+/// Named cross-process lock for running asynchronous operations exclusively.
 /// </summary>
 /// <remarks>
 /// A named <see cref="Mutex"/> is thread-affine: it must be released by the thread that acquired it.
 /// Async continuations resume on arbitrary thread-pool threads (ConfigureAwait cannot pin them in a
 /// console app, which has no synchronization context), so the mutex is owned by a dedicated thread
-/// that acquires it, waits for the handle to be disposed, then releases it.
+/// that acquires it, waits for the callback to complete, then releases it.
 /// </remarks>
-public sealed class InteractiveAuthenticationLock
+public sealed class GlobalLock
 {
-    public static InteractiveAuthenticationLock Default { get; internal set; } =
-        new("Docker.Credential.Acr.InteractiveAuthentication");
-
-    /// <summary>A lock that never blocks, for isolating tests from each other.</summary>
-    internal static InteractiveAuthenticationLock None { get; } = new(null);
-
-    internal InteractiveAuthenticationLock(string? name)
+    internal GlobalLock(string name)
     {
+        ArgumentException.ThrowIfNullOrEmpty(name);
         Name = name;
     }
 
-    internal string? Name { get; }
+    internal string Name { get; }
 
-    public Task<Handle> AcquireAsync(CancellationToken cancellationToken = default)
+    /// <summary>Runs an asynchronous operation exclusively, releasing the lock even if it fails or is cancelled.</summary>
+    /// <param name="action">The operation, receiving whether acquisition waited and the cancellation token.</param>
+    public async Task<T> RunAsync<T>(Func<bool, CancellationToken, Task<T>> action,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        using var handle = await AcquireAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return await action(handle.Waited, cancellationToken);
+    }
+
+    private Task<Handle> AcquireAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (Name is null)
-        {
-            return Task.FromResult(new Handle(null, null, waited: false));
-        }
-
         var acquired = new TaskCompletionSource<Handle>(TaskCreationOptions.RunContinuationsAsynchronously);
         var owner = new Thread(() => Own(Name, acquired, cancellationToken))
         {
             IsBackground = true,
-            Name = "Interactive authentication lock",
+            Name = "Global lock",
         };
         owner.Start();
         return acquired.Task;
@@ -48,10 +49,14 @@ public sealed class InteractiveAuthenticationLock
         {
             using var mutex = new Mutex(initiallyOwned: false, name);
             var waited = !TryWait(mutex, 0, cancellationToken);
-            if (waited && !TryWait(mutex, Timeout.Infinite, cancellationToken))
+            // Unix cannot combine a named mutex and a cancellation handle in WaitAny.
+            while (waited && !TryWait(mutex, 100, cancellationToken))
             {
-                acquired.TrySetCanceled(cancellationToken);
-                return;
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    acquired.TrySetCanceled(cancellationToken);
+                    return;
+                }
             }
 
             var released = new ManualResetEventSlim();
@@ -76,30 +81,35 @@ public sealed class InteractiveAuthenticationLock
     /// <returns>True if the mutex was acquired; false on timeout or cancellation.</returns>
     private static bool TryWait(Mutex mutex, int millisecondsTimeout, CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+
         try
         {
-            return WaitHandle.WaitAny([mutex, cancellationToken.WaitHandle], millisecondsTimeout) == 0;
+            return mutex.WaitOne(millisecondsTimeout);
         }
-        catch (AbandonedMutexException ex) when (ex.MutexIndex == 0)
+        catch (AbandonedMutexException)
         {
             // A previous holder exited without releasing; ownership has passed to this thread.
             return true;
         }
     }
 
-    public sealed class Handle : IDisposable
+    private sealed class Handle : IDisposable
     {
         private ManualResetEventSlim? _released;
-        private readonly ManualResetEventSlim? _freed;
+        private readonly ManualResetEventSlim _freed;
 
-        internal Handle(ManualResetEventSlim? released, ManualResetEventSlim? freed, bool waited)
+        internal Handle(ManualResetEventSlim released, ManualResetEventSlim freed, bool waited)
         {
             _released = released;
             _freed = freed;
             Waited = waited;
         }
 
-        /// <summary>True if another process held the lock, so it may have just completed sign-in.</summary>
+        /// <summary>True if the mutex was not immediately available.</summary>
         public bool Waited { get; }
 
         /// <summary>Releases the lock, blocking until the owning thread has released the mutex.</summary>
@@ -108,7 +118,7 @@ public sealed class InteractiveAuthenticationLock
             if (Interlocked.Exchange(ref _released, null) is { } released)
             {
                 released.Set();
-                _freed!.Wait();
+                _freed.Wait();
             }
         }
     }
