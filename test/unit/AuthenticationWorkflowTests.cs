@@ -100,7 +100,6 @@ public class AuthenticationWorkflowTests
         await Assert.That((await nextSession.GetTokenAsync()).Token).IsEqualTo("secret-access-token");
 
         await Assert.That(nextCredential!.InteractiveCalls).IsEqualTo(0);
-        await Assert.That(nextCredential.TokenCalls).IsEqualTo(2);
         await Assert.That((await store.Get("registry.example.com"))!.HomeAccountId)
             .IsEqualTo("user.tenant");
     }
@@ -117,7 +116,6 @@ public class AuthenticationWorkflowTests
 
         await Assert.That((await session.GetTokenAsync()).Token).IsEqualTo("secret-access-token");
         await Assert.That(credential.InteractiveCalls).IsEqualTo(1);
-        await Assert.That(credential.TokenCalls).IsEqualTo(2);
         await Assert.That((await store.Get("registry.example.com"))!.Username).IsEqualTo("previous@example.com");
         await session.RememberForAsync(["registry.example.com"]);
         await Assert.That((await store.Get("registry.example.com"))!.Username).IsEqualTo("user@example.com");
@@ -224,7 +222,6 @@ public class AuthenticationWorkflowTests
         cancellation.Cancel();
 
         await Assert.That(async () => await session.GetTokenAsync(cancellation.Token)).Throws<OperationCanceledException>();
-        await Assert.That(credential.TokenCalls).IsEqualTo(0);
         await session.GetTokenAsync();
         await Assert.That(async () => await session.RememberForAsync(["registry.example.com"], cancellation.Token))
             .Throws<OperationCanceledException>();

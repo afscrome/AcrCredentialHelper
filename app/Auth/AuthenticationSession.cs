@@ -12,22 +12,25 @@ namespace AlexCrome.Acr.CredentialHelper.Auth;
 /// </summary>
 public sealed class AuthenticationSession
 {
+    internal static GlobalLock DefaultInteractiveLock { get; } =
+        new("Docker.Credential.Acr.InteractiveAuthentication");
+
     private readonly TokenCredential _credential;
     private readonly IRegistryAccountMappingStore _recordStore;
     private readonly ILogger _logger;
     private readonly string? _requestedTenantId;
     private readonly TimeSpan _timeout;
-    private readonly InteractiveAuthenticationLock _interactiveLock;
+    private readonly GlobalLock _interactiveLock;
     private AuthenticationRecord? _record;
     private AuthenticationRecord? _selectedAccount;
     private bool _authenticated;
 
     internal AuthenticationSession(TokenCredential credential, string? tenantId,
         IRegistryAccountMappingStore recordStore, ILogger logger, AuthenticationRecord? record = null,
-        TimeSpan? timeout = null, InteractiveAuthenticationLock? interactiveLock = null)
+        TimeSpan? timeout = null, GlobalLock? interactiveLock = null)
     {
         _credential = credential;
-        _interactiveLock = interactiveLock ?? InteractiveAuthenticationLock.Default;
+        _interactiveLock = interactiveLock ?? DefaultInteractiveLock;
         _requestedTenantId = tenantId;
         _recordStore = recordStore;
         _logger = logger;
@@ -79,8 +82,8 @@ public sealed class AuthenticationSession
             var token = await _credential.GetTokenAsync(context, cancellationToken);
             if (_selectedAccount is null && _credential is InteractiveBrowserCredential broker)
             {
-                using var _ = await AcquireInteractiveLockAsync(cancellationToken);
-                _selectedAccount = await broker.AuthenticateAsync(context, cancellationToken);
+                _selectedAccount = await RunWithInteractiveLockAsync(
+                    async (_, token) => await broker.AuthenticateAsync(context, token), cancellationToken);
             }
 
             return token;
@@ -89,38 +92,39 @@ public sealed class AuthenticationSession
         {
             var broker = (InteractiveBrowserCredential)_credential;
             Logs.BrokerInteractionRequired(_logger);
-            using var interactiveLock = await AcquireInteractiveLockAsync(cancellationToken);
-            if (interactiveLock.Waited)
+            return await RunWithInteractiveLockAsync(async (waited, token) =>
             {
-                // Another process prompted while we waited; its sign-in may let us succeed silently.
-                try
+                if (waited)
                 {
-                    var silentToken = await broker.GetTokenAsync(context, cancellationToken);
-                    _selectedAccount ??= await broker.AuthenticateAsync(context, cancellationToken);
-                    return silentToken;
+                    // Another process prompted while we waited; its sign-in may let us succeed silently.
+                    try
+                    {
+                        var silentToken = await broker.GetTokenAsync(context, token);
+                        _selectedAccount ??= await broker.AuthenticateAsync(context, token);
+                        return silentToken;
+                    }
+                    catch (AuthenticationRequiredException)
+                    {
+                    }
                 }
-                catch (AuthenticationRequiredException)
-                {
-                }
+
+                _selectedAccount = await broker.AuthenticateAsync(context, token);
+                return await broker.GetTokenAsync(context, token);
+            }, cancellationToken);
+        }
+    }
+
+    private Task<T> RunWithInteractiveLockAsync<T>(Func<bool, CancellationToken, Task<T>> action,
+        CancellationToken cancellationToken) =>
+        _interactiveLock.RunAsync((waited, token) =>
+        {
+            if (waited)
+            {
+                Logs.WaitedForInteractiveAuthentication(_logger);
             }
 
-            _selectedAccount = await broker.AuthenticateAsync(context, cancellationToken);
-            var token = await broker.GetTokenAsync(context, cancellationToken);
-            return token;
-        }
-    }
-
-    private async Task<InteractiveAuthenticationLock.Handle> AcquireInteractiveLockAsync(
-        CancellationToken cancellationToken)
-    {
-        var handle = await _interactiveLock.AcquireAsync(cancellationToken);
-        if (handle.Waited)
-        {
-            Logs.WaitedForInteractiveAuthentication(_logger);
-        }
-
-        return handle;
-    }
+            return action(waited, token);
+        }, cancellationToken);
 
     private static bool IsAuthenticationCancelled(AuthenticationFailedException exception)
     {

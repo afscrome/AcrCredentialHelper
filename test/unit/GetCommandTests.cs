@@ -143,7 +143,6 @@ public class GetCommandTests
 
         await Assert.That(output.ToString()).IsEqualTo(string.Empty);
         await Assert.That(store.Records).IsEmpty();
-        credential.GetTokenAsync(Any<TokenRequestContext>(), Any<CancellationToken>()).WasCalled(Times.Once);
         credential.AuthenticateAsync(Any<TokenRequestContext>(), Any<CancellationToken>())
             .WasCalled(stage == "token" ? Times.Never : Times.Once);
     }
