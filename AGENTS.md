@@ -14,7 +14,7 @@ Run from the repository root:
 ```bash
 dotnet restore AcrCredentialHelper.slnx
 dotnet build AcrCredentialHelper.slnx --no-restore
-dotnet test --project test/unit/Docker.Credential.Acr.Tests.csproj
+dotnet test --project test/unit/AlexCrome.Acr.CredentialHelper.Tests.csproj
 ```
 
 ## Tests

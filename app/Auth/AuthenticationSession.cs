@@ -13,7 +13,7 @@ namespace AlexCrome.Acr.CredentialHelper.Auth;
 public sealed class AuthenticationSession
 {
     internal static GlobalLock DefaultInteractiveLock { get; } =
-        new("Docker.Credential.Acr.InteractiveAuthentication");
+        new("AlexCrome.Acr.CredentialHelper.InteractiveAuthentication");
 
     private readonly TokenCredential _credential;
     private readonly IRegistryAccountMappingStore _recordStore;

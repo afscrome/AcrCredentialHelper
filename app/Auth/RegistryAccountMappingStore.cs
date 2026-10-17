@@ -10,7 +10,7 @@ public sealed class RegistryAccountMappingStore : IRegistryAccountMappingStore
 
     public RegistryAccountMappingStore()
         : this(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Docker.Credential.Acr"))
+            "AlexCrome.Acr.CredentialHelper"))
     {
     }
 
