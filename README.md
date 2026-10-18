@@ -10,8 +10,21 @@ The ACR Credential Helper streamlines this by:
 
 ## Installation
 
-Installation instructions are not available yet.
-Build and release pipelines, published release artefacts, and step-by-step installation instructions are still being prepared and will be added here.
+### macOS and Linux
+
+Install the latest build from the `main` branch with:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/afscrome/AcrCredentialHelper/main/scripts/install.sh | bash
+```
+
+The script installs `docker-credential-acr` into `~/.acrcredhelper` and adds that directory to your `PATH` if it is missing.
+For now it requires the [GitHub CLI](https://cli.github.com) (`gh`), signed in with `gh auth login`.
+
+### Windows
+
+Windows installation instructions are not available yet.
+Published release artefacts and a Windows installer are still being prepared.
 
 ## Get started
 
