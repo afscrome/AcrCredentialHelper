@@ -10,7 +10,7 @@
   <Identity
     Name="AlexCrome.AcrCredentialHelper"
     Publisher="CN=AlexCrome"
-    Version="1.0.0.0" />
+    Version="0.0.1.0" />
 
   <Properties>
     <DisplayName>ACR Credential Helper</DisplayName>
