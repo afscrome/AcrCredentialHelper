@@ -55,7 +55,7 @@ jobs:
           path: ${{ github.workspace }}/publish
 
       - name: ⚙️ Setup winapp CLI
-        uses: microsoft/setup-WinAppCli@v0.1
+        uses: microsoft/setup-WinAppCli@v0.2
 
       - name: 📦 Package
         shell: pwsh
